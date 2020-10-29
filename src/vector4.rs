@@ -1,6 +1,7 @@
 #[cfg(feature = "serde-serialize")]
 use serde::{Deserialize, Serialize};
 
+use super::*;
 use nalgebra::*;
 use std::mem::transmute;
 use std::ops::*;
@@ -111,12 +112,6 @@ impl DivAssign for SimdVector4 {
     }
 }
 
-#[cfg(target_arch = "x86")]
-use std::arch::x86::*;
-
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
 fn x86_add(a: &Vector4<f32>, b: &Vector4<f32>) -> Vector4<f32> {
     unsafe { x86_operation(|a, b| _mm_add_ps(a, b), a, b) }
 }
@@ -143,16 +138,46 @@ unsafe fn x86_operation<F: Fn(__m128, __m128) -> __m128>(
     transmute(f(a, b))
 }
 
+impl SimdVector4 {
+    pub fn dot(&self, rhs: &SimdVector4) -> SimdVector4 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        unsafe {
+            let mul0 = _mm_mul_ps(transmute(self.vector), transmute(rhs.vector));
+            let swp0 = _mm_shuffle_ps(mul0, mul0, internal_mm_shuffle(2, 3, 0, 1));
+            let add0 = _mm_add_ps(mul0, swp0);
+            let swp1 = _mm_shuffle_ps(add0, add0, internal_mm_shuffle(0, 1, 2, 3));
+            transmute(_mm_add_ps(add0, swp1))
+        }
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            self.vector.dot(&rhs.vector)
+        }
+    }
+    pub fn normalize(&self) -> SimdVector4 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        unsafe {
+            let dot0 = transmute(self.dot(self));
+            let isr0 = _mm_rsqrt_ps(dot0);
+            transmute(_mm_mul_ps(transmute(*self), isr0))
+        }
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            self.vector.normalize()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cgmath::relative_eq;
     use rand::prelude::*;
 
     #[test]
     fn add_test() {
         let mut rng = thread_rng();
-        let a = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
-        let b = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
+        let a = Vector4::<f32>::from_fn(|_, _| rng.gen());
+        let b = Vector4::<f32>::from_fn(|_, _| rng.gen());
 
         let result = Vector4::from(a + b);
 
@@ -168,8 +193,8 @@ mod tests {
     #[test]
     fn sub_test() {
         let mut rng = thread_rng();
-        let a = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
-        let b = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
+        let a = Vector4::<f32>::from_fn(|_, _| rng.gen());
+        let b = Vector4::<f32>::from_fn(|_, _| rng.gen());
 
         let result = Vector4::from(a - b);
 
@@ -185,8 +210,8 @@ mod tests {
     #[test]
     fn mul_test() {
         let mut rng = thread_rng();
-        let a = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
-        let b = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
+        let a = Vector4::<f32>::from_fn(|_, _| rng.gen());
+        let b = Vector4::<f32>::from_fn(|_, _| rng.gen());
 
         let result = Vector4::from(a.component_mul(&b));
 
@@ -202,8 +227,8 @@ mod tests {
     #[test]
     fn div_test() {
         let mut rng = thread_rng();
-        let a = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
-        let b = Vector4::<f32>::from_column_slice(&[rng.gen(), rng.gen(), rng.gen(), rng.gen()]);
+        let a = Vector4::<f32>::from_fn(|_, _| rng.gen());
+        let b = Vector4::<f32>::from_fn(|_, _| rng.gen());
 
         let result = Vector4::from(a.component_div(&b));
 
@@ -214,5 +239,29 @@ mod tests {
 
         assert!(result.relative_eq(&(a / b).into(), std::f32::EPSILON, std::f32::EPSILON));
         assert!(result.relative_eq(&c.into(), std::f32::EPSILON, std::f32::EPSILON));
+    }
+
+    #[test]
+    fn dot_test() {
+        let mut rng = thread_rng();
+        let a = Vector4::<f32>::from_fn(|_, _| rng.gen());
+        let b = Vector4::<f32>::from_fn(|_, _| rng.gen());
+
+        let result = a.dot(&b);
+
+        let a = SimdVector4::from(a);
+        let b = SimdVector4::from(b);
+        relative_eq!(result, a.dot(&b).vector.x);
+    }
+
+    #[test]
+    fn noramlize_test() {
+        let mut rng = thread_rng();
+        let a = Vector4::<f32>::from_fn(|_, _| rng.gen());
+
+        let result = a.normalize();
+
+        let a = SimdVector4::from(a);
+        result.relative_eq(&a.normalize().into(), std::f32::EPSILON, std::f32::EPSILON);
     }
 }
