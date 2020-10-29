@@ -1,0 +1,25 @@
+[package]
+name = "simple-simd"
+version = "0.1.0"
+authors = ["Temitope Alaga <temdog007@yahoo.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies.nalgebra]
+version = "0.23.0"
+features = ["serde-serialize"]
+
+[dependencies.serde]
+version = "1.0.117"
+optional = true
+features = ["serde_derive"]
+
+[dev-dependencies]
+rand = "0.7"
+cgmath = "0.17.0"
+approx = "0.4.0"
+
+[features]
+default = []
+serde-serialize = ["serde"]
