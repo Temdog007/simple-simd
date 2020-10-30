@@ -95,6 +95,27 @@ impl Mul for SimdMatrix4 {
     }
 }
 
+impl Mul<f32> for SimdMatrix4 {
+    type Output = SimdMatrix4;
+    fn mul(self, rhs: f32) -> SimdMatrix4 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        unsafe {
+            let in1: [SimdVector4; 4] = transmute(self);
+            let in2 = SimdVector4::from(Vector4::<f32>::from_element(rhs));
+            transmute([
+                *in1.get_unchecked(0) * in2,
+                *in1.get_unchecked(1) * in2,
+                *in1.get_unchecked(2) * in2,
+                *in1.get_unchecked(3) * in2,
+            ])
+        }
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            self.matrix4 * rhs.matrix4
+        }
+    }
+}
+
 impl SimdMatrix4 {
     pub fn transpose(&self) -> SimdMatrix4 {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -125,7 +146,7 @@ mod tests {
     use rand::prelude::*;
 
     #[test]
-    fn add_test(){
+    fn add_test() {
         let mut rng = thread_rng();
         let a = Matrix4::<f32>::from_fn(|_, _| rng.gen());
         let b = Matrix4::<f32>::from_fn(|_, _| rng.gen());
@@ -147,6 +168,18 @@ mod tests {
 
         let a = SimdMatrix4::from(a);
         let b = SimdMatrix4::from(b);
+        assert!(result.relative_eq(&(a * b).into(), std::f32::EPSILON, std::f32::EPSILON));
+    }
+
+    #[test]
+    fn mul_f32_test(){
+        let mut rng = thread_rng();
+        let a = Matrix4::<f32>::from_fn(|_, _| rng.gen());
+        let b : f32 = rng.gen();
+
+        let result = a * b;
+
+        let a = SimdMatrix4::from(a);
         assert!(result.relative_eq(&(a * b).into(), std::f32::EPSILON, std::f32::EPSILON));
     }
 
